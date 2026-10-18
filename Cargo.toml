@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["tools/idl"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99.1"
+license = "MPL-2.0"
+repository = "https://github.com/fluidic-dev/fluidic-ui"
+
