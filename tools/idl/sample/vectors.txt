@@ -1,0 +1,228 @@
+# Shared vectors for the generated Rust and Go. One per line, fields separated by tabs:
+#   round    TYPE  TEXT        TEXT decodes, and encodes back to exactly TEXT
+#   normal   TYPE  IN  OUT     IN decodes, and encodes to OUT
+#   refuse   TYPE  TEXT        TEXT is refused
+#   unknown  TYPE  TEXT  NAME  TEXT decodes to TYPE's unknown case holding NAME, which cannot be encoded
+#   noencode TYPE  TEXT        TEXT decodes, but holds an unknown case, so it cannot be encoded
+
+# Structs
+round	sample	{"flag":true,"small":4294967295,"delta":-2147483648,"id":18446744073709551615,"offset":-9223372036854775808,"ratio":0.1,"scale":1e+21,"label":"tab\there \"q\" \\ \u001f é😀","contract":"0.1","tags":["a","b"],"grid":[[1,-2],[]],"by_name":{"a":{"name":"a","version":"1"},"b":{"name":"b","version":"2"}},"align":"center","reason":{"no_common_version":{"host_versions":["0.1","1.10"]}},"type":"t","title":"x","sdk":{"name":"s","version":"v"},"notes":[],"weights":{"w":0.5},"next_reason":"done","next_align":"end"}
+round	sample	{"flag":false,"small":0,"delta":0,"id":0,"offset":0,"ratio":0,"scale":0,"label":"","contract":"0.0","tags":[],"grid":[],"by_name":{},"align":"start","reason":"done","type":""}
+round	sdk_info	{"name":"a","version":"1"}
+normal	sdk_info	 { "version" : "1" , "name" : "a" } 	{"name":"a","version":"1"}
+normal	sdk_info	{"name":"a","version":"1","extra":{"x":[1,2.5,"s",true,{}]}}	{"name":"a","version":"1"}
+refuse	sdk_info	{"name":"a"}
+refuse	sdk_info	{"name":"a","version":"1","name":"b"}
+refuse	sdk_info	{"name":"a","version":"1","extra":1,"extra":2}
+refuse	sdk_info	{"name":null,"version":"1"}
+refuse	sdk_info	{"name":"a","version":"1","extra":null}
+refuse	sdk_info	{"name":"a","version":"1","extra":[null]}
+refuse	sdk_info	{"name":"a","version":1}
+refuse	sdk_info	["a","1"]
+refuse	sdk_info	{"name":"a","version":"1"} x
+refuse	sdk_info	{"name":"a","version":"1"},
+refuse	sdk_info	{"name":"a","version":"1",}
+refuse	sdk_info	{"name":"a" "version":"1"}
+round	nothing	{}
+normal	nothing	{"later":"field"}	{}
+round	node	{"label":"root","children":[{"label":"a","children":[]},{"label":"b","children":[{"label":"c","children":[]}]}]}
+
+# Optional fields: absent when unset, never null
+round	choice	{"align":"start"}
+round	choice	{"align":"start","reason":"done"}
+refuse	choice	{"align":"start","reason":null}
+refuse	sample	{"flag":false,"small":0,"delta":0,"id":0,"offset":0,"ratio":0,"scale":0,"label":"","contract":"0.0","tags":[],"grid":[],"by_name":{},"align":"start","reason":"done","type":"","title":null}
+
+# Maps: keys sorted by UTF-8 bytes, never repeated
+round	tally	{"counts":{}}
+round	tally	{"counts":{"":0}}
+normal	tally	{"counts":{"b":2,"a":1,"B":3,"é":4,"aa":5}}	{"counts":{"B":3,"a":1,"aa":5,"b":2,"é":4}}
+refuse	tally	{"counts":{"a":1,"a":2}}
+refuse	tally	{"counts":[]}
+
+# Unions: a bare name, or an object with exactly one key
+round	bye_reason	"done"
+round	bye_reason	{"no_common_version":{"host_versions":["0.1"]}}
+round	bye_reason	{"crashed":{"name":"a","version":"1"}}
+unknown	bye_reason	"gone"	gone
+unknown	bye_reason	{"gone":{"x":1}}	gone
+unknown	bye_reason	{"gone":[1,{"y":"z"}]}	gone
+refuse	bye_reason	{"done":{}}
+refuse	bye_reason	"crashed"
+refuse	bye_reason	{}
+refuse	bye_reason	{"gone":1,"x":2}
+refuse	bye_reason	{"done":1,"x":2}
+refuse	bye_reason	{"gone":null}
+refuse	bye_reason	null
+refuse	bye_reason	1
+
+# Enums: a name
+round	alignment	"center"
+unknown	alignment	"diagonal"	diagonal
+refuse	alignment	{"center":{}}
+refuse	alignment	1
+
+# An unknown case inside a value
+noencode	choice	{"align":"diagonal"}
+noencode	choice	{"align":"start","reason":"gone"}
+
+# Messages, by sender
+round	app_message	{"hello":{"versions":["0.1"],"app_id":"dev.fluidic.corpus","sdk":{"name":"corpus","version":"0"}}}
+round	app_message	{"bye":{"reason":"done"}}
+round	host_message	{"welcome":{"version":"0.1","session":7}}
+round	host_message	{"bye":{"reason":{"no_common_version":{"host_versions":["0.1"]}}}}
+unknown	app_message	{"welcome":{"version":"0.1","session":7}}	welcome
+unknown	host_message	{"hello":{"versions":["0.1"],"app_id":"a","sdk":{"name":"s","version":"0"}}}	hello
+refuse	app_message	"bye"
+
+# Integers: plain decimal, in range
+round	u32	4294967295
+round	u32	0
+refuse	u32	-0
+refuse	u32	4294967296
+refuse	u32	-1
+refuse	u32	1.0
+refuse	u32	1e2
+refuse	u32	01
+refuse	u32	"1"
+round	i32	-2147483648
+round	i32	2147483647
+refuse	i32	2147483648
+refuse	i32	-2147483649
+refuse	i32	-0
+round	u64	18446744073709551615
+refuse	u64	18446744073709551616
+round	i64	-9223372036854775808
+refuse	i64	9223372036854775808
+refuse	i64	-0
+
+# Floats: the shortest digits, laid out as RFC 8785 lays them out
+round	f64	0
+round	f64	5e-324
+round	f64	-5e-324
+round	f64	1.7976931348623157e+308
+round	f64	9007199254740992
+round	f64	-9007199254740992
+round	f64	295147905179352830000
+round	f64	999999999999999700000
+round	f64	1e+21
+round	f64	9.999999999999997e+22
+round	f64	1e+23
+round	f64	0.000001
+round	f64	1e-7
+round	f64	333333333.3333333
+round	f64	1424953923781206.2
+round	f64	-1.5
+round	f64	0.1
+round	f64	123.456
+normal	f64	-0	0
+normal	f64	-0.0	0
+normal	f64	1.0	1
+normal	f64	1E2	100
+normal	f64	1e+2	100
+normal	f64	0.10000000000000001	0.1
+normal	f64	1e-400	0
+normal	f64	100e-2	1
+normal	f64	1e21	1e+21
+normal	f64	0.0000001	1e-7
+refuse	f64	1e400
+refuse	f64	-1e400
+refuse	f64	NaN
+refuse	f64	Infinity
+refuse	f64	.5
+refuse	f64	01
+refuse	f64	1.
+refuse	f64	+1
+refuse	f64	"1"
+refuse	f64	null
+refuse	f64	1e
+refuse	f64	-
+round	f32	0.1
+round	f32	16777216
+round	f32	3.4028235e+38
+round	f32	1e-45
+round	f32	1e+21
+round	f32	-2.5
+normal	f32	3.40282350e+38	3.4028235e+38
+refuse	f32	3.4028236e+38
+normal	f32	0.1000000001	0.1
+normal	f32	16777217	16777216
+refuse	f32	3.5e+38
+
+# Booleans
+round	bool	true
+round	bool	false
+refuse	bool	1
+refuse	bool	True
+
+# Strings: escaped as RFC 8785 escapes them, otherwise literal UTF-8
+round	string	"a\"b\\c"
+round	string	"\b\f\n\r\t"
+round	string	"\u0000\u001f"
+round	string	"é😀"
+normal	string	"A\/"	"A/"
+normal	string	"éé"	"éé"
+normal	string	"😀"	"😀"
+normal	string	"\u007f"	""
+refuse	string	"\ud83d"
+refuse	string	"\ude00"
+refuse	string	"\ud83dx"
+refuse	string	"\x"
+refuse	string	"\u12"
+refuse	string	"abc
+refuse	string	'a'
+
+# Versions: "MAJOR.MINOR", no leading zeros, each part a u32
+round	version	"0.1"
+round	version	"1.10"
+round	version	"4294967295.0"
+refuse	version	"01.1"
+refuse	version	"1.01"
+refuse	version	"1"
+refuse	version	"1.1.1"
+refuse	version	"4294967296.0"
+refuse	version	"1.+1"
+refuse	version	"-1.0"
+refuse	version	"1."
+refuse	version	".1"
+refuse	version	0.1
+round	shape	{"group":{"shapes":[{"circle":{"radius":2}},{"group":{"shapes":[]}}]}}
+
+# Unknown fields inside variants and messages
+normal	bye_reason	{"no_common_version":{"host_versions":["0.1"],"later":1}}	{"no_common_version":{"host_versions":["0.1"]}}
+normal	bye_reason	{"crashed":{"name":"a","version":"1","later":[1]}}	{"crashed":{"name":"a","version":"1"}}
+normal	app_message	{"hello":{"versions":["0.1"],"app_id":"a","sdk":{"name":"s","version":"0","later":{}},"later":true}}	{"hello":{"versions":["0.1"],"app_id":"a","sdk":{"name":"s","version":"0"}}}
+normal	host_message	{"welcome":{"version":"0.1","session":7,"later":"x"}}	{"welcome":{"version":"0.1","session":7}}
+normal	shape	{"circle":{"radius":2,"later":{"a":[]}}}	{"circle":{"radius":2}}
+
+# A key written twice is refused even where nobody reads it
+refuse	nothing	{"later":{"x":1,"x":2}}
+refuse	nothing	{"later":[{"x":1,"x":2}]}
+refuse	bye_reason	{"gone":{"x":1,"x":2}}
+refuse	sdk_info	{"name":"a","version":"1","later":{"y":{"x":1,"x":1}}}
+
+# Every variant, and each type that holds a union
+round	bye_reason	"not_hello_first"
+round	shape	{"circle":{"radius":0}}
+round	group	{"shapes":[]}
+round	group	{"shapes":[{"group":{"shapes":[{"circle":{"radius":2}}]}},{"circle":{"radius":4294967295}}]}
+round	app_message	{"bye":{"reason":{"crashed":{"name":"a","version":"1"}}}}
+round	host_message	{"bye":{"reason":"not_hello_first"}}
+
+# Fields named with Rust keywords
+round	keywords	{"self":1,"crate":2,"super":3,"type":4}
+
+# Nesting deeper than 128 objects and lists is refused, read or skipped
+normal	nothing	{"later":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}	{}
+refuse	nothing	{"later":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}
+refuse	bye_reason	{"gone":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}
+round	node	{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}
+refuse	node	{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[{"label":"x","children":[]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}
+
+# A skipped number has no type, so it is held to the f64 range: beyond it is
+# refused, below it reads as 0, as for an f64
+refuse	nothing	{"later":1.5e400}
+refuse	nothing	{"later":[-1e309]}
+refuse	bye_reason	{"gone":{"x":1e999}}
+normal	nothing	{"later":1e-400}	{}
+normal	nothing	{"later":18446744073709551616}	{}

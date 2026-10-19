@@ -23,21 +23,37 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --workspace --all-targets --locked
       - run: cargo test --workspace --locked
+      - name: Generated code is up to date
+        run: cargo run -p fluidic-ui-idl --locked -- check
+
+  generated-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/idl/sample/go/go.mod
+          cache: false
+      - name: Awkward names generate Rust and Go that build
+        run: cargo test -p fluidic-ui-idl --locked --test compile -- --ignored
 
   go:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        module: [sdk/go, tools/idl/sample/go]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: sdk/go
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: sdk/go/go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
           cache: false
       - name: gofmt
         shell: bash

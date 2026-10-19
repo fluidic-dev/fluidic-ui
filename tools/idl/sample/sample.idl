@@ -1,0 +1,116 @@
+// A sample schema that uses every construct of the IDL. Its generated Rust
+// and Go are tested against `vectors.txt`.
+
+/// A sample contract, for testing the generator.
+contract 0.2
+
+/// The app's first message.
+message hello from app since 0.1 {
+    /// The contract versions the app speaks.
+    versions: list<version> since 0.1
+    app_id: string since 0.1
+    sdk: sdk_info since 0.1
+}
+
+/// The host's answer to hello.
+message welcome from host since 0.1 {
+    version: version since 0.1
+    session: u64 since 0.1
+}
+
+/// The last message of a session, from either side.
+message bye from either since 0.1 {
+    reason: bye_reason since 0.1
+}
+
+/// The SDK an app uses.
+struct sdk_info since 0.1 {
+    name: string since 0.1
+    version: string since 0.1
+}
+
+/// The reason a session ended.
+union bye_reason since 0.1 {
+    /// An ending the app chose.
+    done since 0.1
+    not_hello_first since 0.1
+    /// The lack of a common contract version.
+    no_common_version {
+        /// The versions the host speaks.
+        host_versions: list<version> since 0.1
+    } since 0.1
+    crashed(sdk_info) since 0.2
+}
+
+/// A position along an axis.
+enum alignment since 0.1 {
+    start since 0.1
+    center since 0.1
+    end since 0.2
+}
+
+/// A struct with every scalar, container and kind of optional field.
+struct sample since 0.1 {
+    flag: bool since 0.1
+    small: u32 since 0.1
+    delta: i32 since 0.1
+    id: u64 since 0.1
+    offset: i64 since 0.1
+    ratio: f32 since 0.1
+    scale: f64 since 0.1
+    label: string since 0.1
+    contract: version since 0.1
+    tags: list<string> since 0.1
+    grid: list<list<i64>> since 0.1
+    by_name: map<string, sdk_info> since 0.1
+    align: alignment since 0.1
+    reason: bye_reason since 0.1
+    /// A name that is a Rust keyword.
+    type: string since 0.1
+    optional title: string since 0.2
+    optional sdk: sdk_info since 0.1
+    optional notes: list<string> since 0.1
+    optional weights: map<string, f64> since 0.1
+    optional next_reason: bye_reason since 0.1
+    optional next_align: alignment since 0.1
+}
+
+/// A struct with an enum and an optional union, for values that cannot be encoded.
+struct choice since 0.1 {
+    align: alignment since 0.1
+    optional reason: bye_reason since 0.1
+}
+
+/// A map, for key order.
+struct tally since 0.1 {
+    counts: map<string, u32> since 0.1
+}
+
+/// A type that holds itself through a list.
+struct node since 0.1 {
+    label: string since 0.1
+    children: list<node> since 0.1
+}
+
+/// A struct without fields.
+struct nothing since 0.1 {}
+
+/// A union that holds itself through a struct it carries.
+union shape since 0.1 {
+    group(group) since 0.1
+    circle {
+        radius: u32 since 0.1
+    } since 0.1
+}
+
+struct group since 0.1 {
+    shapes: list<shape> since 0.1
+}
+
+/// A struct whose fields are named with Rust keywords that cannot be raw identifiers.
+struct keywords since 0.1 {
+    self: u32 since 0.1
+    crate: u32 since 0.1
+    super: u32 since 0.1
+    type: u32 since 0.1
+}

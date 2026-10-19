@@ -1,0 +1,739 @@
+// The generator copies this file into each Rust crate it generates, as
+// `json.rs`, under a header that marks the copy as generated.
+
+//! Canonical JSON: the one text each value has, and the reader that refuses
+//! anything outside it.
+
+use std::collections::BTreeMap;
+use std::fmt;
+
+/// A value with a canonical JSON text.
+pub trait Canonical: Sized {
+    /// The value's canonical text. Fails on a value that holds an unknown
+    /// case, or a float that is NaN or infinite.
+    fn encode(&self) -> Result<String, EncodeError> {
+        let mut w = Writer::default();
+        self.write(&mut w)?;
+        Ok(w.out)
+    }
+
+    /// Reads one value from JSON text.
+    fn decode(text: &[u8]) -> Result<Self, DecodeError> {
+        let text = std::str::from_utf8(text).map_err(|e| DecodeError {
+            offset: e.valid_up_to(),
+            message: "the text is not UTF-8".to_string(),
+        })?;
+        let mut r = Reader {
+            text: text.as_bytes(),
+            at: 0,
+            depth: 0,
+        };
+        let value = Self::read(&mut r)?;
+        r.space();
+        if r.at < r.text.len() {
+            return Err(r.error("more text after the value"));
+        }
+        Ok(value)
+    }
+
+    #[doc(hidden)]
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError>;
+
+    #[doc(hidden)]
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError>;
+}
+
+/// Why a text was refused, and where.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodeError {
+    /// The byte offset into the text.
+    pub offset: usize,
+    pub message: String,
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "at byte {}: {}", self.offset, self.message)
+    }
+}
+
+impl std::error::Error for DecodeError {}
+
+/// Why a value has no canonical text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodeError {
+    pub message: String,
+}
+
+impl EncodeError {
+    #[doc(hidden)]
+    pub fn unknown(name: &str) -> Self {
+        EncodeError {
+            message: format!("`{name}` is an unknown case, which is never sent"),
+        }
+    }
+}
+
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
+/// A contract version, written `"MAJOR.MINOR"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Version {
+    pub major: u32,
+    pub minor: u32,
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+#[doc(hidden)]
+#[derive(Default)]
+pub struct Writer {
+    out: String,
+    /// Whether the innermost open object or list has had nothing written.
+    first: Vec<bool>,
+}
+
+impl Writer {
+    fn comma(&mut self) {
+        if let Some(first) = self.first.last_mut() {
+            if !*first {
+                self.out.push(',');
+            }
+            *first = false;
+        }
+    }
+
+    pub fn begin_object(&mut self) {
+        self.out.push('{');
+        self.first.push(true);
+    }
+
+    pub fn end_object(&mut self) {
+        self.out.push('}');
+        self.first.pop();
+    }
+
+    pub fn begin_list(&mut self) {
+        self.out.push('[');
+        self.first.push(true);
+    }
+
+    pub fn end_list(&mut self) {
+        self.out.push(']');
+        self.first.pop();
+    }
+
+    /// Starts a list item.
+    pub fn item(&mut self) {
+        self.comma();
+    }
+
+    /// Writes an object key; its value follows.
+    pub fn key(&mut self, key: &str) {
+        self.comma();
+        self.raw_string(key);
+        self.out.push(':');
+    }
+
+    pub fn string(&mut self, s: &str) {
+        self.raw_string(s);
+    }
+
+    fn raw_string(&mut self, s: &str) {
+        self.out.push('"');
+        for c in s.chars() {
+            match c {
+                '"' => self.out.push_str("\\\""),
+                '\\' => self.out.push_str("\\\\"),
+                '\u{8}' => self.out.push_str("\\b"),
+                '\u{c}' => self.out.push_str("\\f"),
+                '\n' => self.out.push_str("\\n"),
+                '\r' => self.out.push_str("\\r"),
+                '\t' => self.out.push_str("\\t"),
+                c if c < ' ' => self.out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => self.out.push(c),
+            }
+        }
+        self.out.push('"');
+    }
+
+    fn number(&mut self, n: impl fmt::Display) {
+        self.out.push_str(&n.to_string());
+    }
+
+    /// `scientific` is Rust's shortest round-trip form, such as `1.5e-7`.
+    fn float(&mut self, scientific: String) {
+        self.out.push_str(&layout(&scientific));
+    }
+}
+
+/// Lays out a float's shortest digits as RFC 8785 (ECMAScript) does.
+fn layout(scientific: &str) -> String {
+    let (negative, rest) = match scientific.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, scientific),
+    };
+    let (mantissa, exponent) = rest.split_once('e').expect("scientific notation");
+    let digits: String = mantissa.chars().filter(|&c| c != '.').collect();
+    let digits = digits.trim_end_matches('0');
+    if digits.is_empty() {
+        return "0".to_string();
+    }
+    let k = digits.len() as i32;
+    // The value is 0.DIGITS times ten to the n.
+    let n = exponent.parse::<i32>().expect("an exponent") + 1;
+    let mut out = String::new();
+    if negative {
+        out.push('-');
+    }
+    if k <= n && n <= 21 {
+        out.push_str(digits);
+        out.extend(std::iter::repeat_n('0', (n - k) as usize));
+    } else if 0 < n && n <= 21 {
+        out.push_str(&digits[..n as usize]);
+        out.push('.');
+        out.push_str(&digits[n as usize..]);
+    } else if -6 < n && n <= 0 {
+        out.push_str("0.");
+        out.extend(std::iter::repeat_n('0', (-n) as usize));
+        out.push_str(digits);
+    } else {
+        out.push_str(&digits[..1]);
+        if k > 1 {
+            out.push('.');
+            out.push_str(&digits[1..]);
+        }
+        let e = n - 1;
+        out.push('e');
+        out.push(if e < 0 { '-' } else { '+' });
+        out.push_str(&e.abs().to_string());
+    }
+    out
+}
+
+/// How deeply objects and lists may nest, so that a hostile text cannot
+/// overflow the stack.
+const MAX_DEPTH: usize = 128;
+
+#[doc(hidden)]
+pub struct Reader<'a> {
+    text: &'a [u8],
+    at: usize,
+    /// The objects and lists open around the reader.
+    depth: usize,
+}
+
+/// A union as written: a bare name, or an object with one key whose value
+/// the reader is now at.
+#[doc(hidden)]
+pub enum Tag {
+    Bare(String),
+    Data(String),
+}
+
+/// Reads an object's keys, refusing a key written twice.
+#[doc(hidden)]
+#[derive(Default)]
+pub struct Object {
+    seen: Vec<String>,
+}
+
+impl Object {
+    /// The next key, with the reader at its value; `None` after the last.
+    pub fn next_key(&mut self, r: &mut Reader<'_>) -> Result<Option<String>, DecodeError> {
+        if r.leave(b'}') {
+            return Ok(None);
+        }
+        if !self.seen.is_empty() {
+            r.expect(b',')?;
+            r.space();
+        }
+        let start = r.at;
+        let key = r.string()?;
+        if self.seen.contains(&key) {
+            return Err(DecodeError {
+                offset: start,
+                message: format!("key `{key}` is written twice"),
+            });
+        }
+        r.space();
+        r.expect(b':')?;
+        self.seen.push(key.clone());
+        Ok(Some(key))
+    }
+}
+
+impl Reader<'_> {
+    pub fn error(&self, message: impl Into<String>) -> DecodeError {
+        DecodeError {
+            offset: self.at,
+            message: message.into(),
+        }
+    }
+
+    fn space(&mut self) {
+        while self.at < self.text.len()
+            && matches!(self.text[self.at], b' ' | b'\t' | b'\n' | b'\r')
+        {
+            self.at += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.text.get(self.at).copied()
+    }
+
+    fn eat(&mut self, b: u8) -> bool {
+        let found = self.peek() == Some(b);
+        if found {
+            self.at += 1;
+        }
+        found
+    }
+
+    fn expect(&mut self, b: u8) -> Result<(), DecodeError> {
+        if self.eat(b) {
+            Ok(())
+        } else {
+            Err(self.error(format!("expected `{}`", b as char)))
+        }
+    }
+
+    /// Fails on `null`, which is never written, and anything else that cannot
+    /// start the value wanted.
+    fn wrong(&self, wanted: &str) -> DecodeError {
+        if self.text[self.at..].starts_with(b"null") {
+            self.error("`null` is refused: leave an unset field out")
+        } else {
+            self.error(format!("expected {wanted}"))
+        }
+    }
+
+    /// Opens an object.
+    pub fn object(&mut self) -> Result<Object, DecodeError> {
+        if !self.enter(b'{')? {
+            return Err(self.wrong("an object"));
+        }
+        Ok(Object::default())
+    }
+
+    /// Consumes an object's or list's opening bracket, if it comes next, and
+    /// counts the depth.
+    fn enter(&mut self, bracket: u8) -> Result<bool, DecodeError> {
+        self.space();
+        if !self.eat(bracket) {
+            return Ok(false);
+        }
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(DecodeError {
+                offset: self.at - 1,
+                message: format!("nested deeper than {MAX_DEPTH} objects and lists"),
+            });
+        }
+        Ok(true)
+    }
+
+    /// Consumes a closing bracket, if it comes next.
+    fn leave(&mut self, bracket: u8) -> bool {
+        self.space();
+        let found = self.eat(bracket);
+        if found {
+            self.depth -= 1;
+        }
+        found
+    }
+
+    /// Reads a list, calling `item` with the reader at each one.
+    fn list(
+        &mut self,
+        mut item: impl FnMut(&mut Self) -> Result<(), DecodeError>,
+    ) -> Result<(), DecodeError> {
+        if !self.enter(b'[')? {
+            return Err(self.wrong("a list"));
+        }
+        let mut first = true;
+        while !self.leave(b']') {
+            if !first {
+                self.expect(b',')?;
+            }
+            first = false;
+            item(self)?;
+        }
+        Ok(())
+    }
+
+    /// A required field that was never read.
+    pub fn required<T>(&self, value: Option<T>, field: &str) -> Result<T, DecodeError> {
+        value.ok_or_else(|| self.error(format!("field `{field}` is missing")))
+    }
+
+    pub fn tag(&mut self) -> Result<Tag, DecodeError> {
+        self.space();
+        match self.peek() {
+            Some(b'"') => Ok(Tag::Bare(self.string()?)),
+            Some(b'{') => {
+                self.enter(b'{')?;
+                self.space();
+                if self.peek() == Some(b'}') {
+                    return Err(
+                        self.error("a union holds exactly one variant, and this holds none")
+                    );
+                }
+                let name = self.string()?;
+                self.space();
+                self.expect(b':')?;
+                Ok(Tag::Data(name))
+            }
+            _ => Err(self.wrong("a variant: a name, or an object with one key")),
+        }
+    }
+
+    /// Closes a union written as an object.
+    pub fn end_tag(&mut self) -> Result<(), DecodeError> {
+        if self.leave(b'}') {
+            Ok(())
+        } else {
+            Err(self.error("a union holds exactly one variant"))
+        }
+    }
+
+    pub fn bare_with_data(&self, name: &str) -> DecodeError {
+        self.error(format!(
+            "variant `{name}` carries data, so it is written as an object"
+        ))
+    }
+
+    pub fn data_without_data(&self, name: &str) -> DecodeError {
+        self.error(format!(
+            "variant `{name}` carries no data, so it is written as its name"
+        ))
+    }
+
+    /// Steps over a value nobody reads: an unknown field or variant.
+    pub fn skip(&mut self) -> Result<(), DecodeError> {
+        self.space();
+        match self.peek() {
+            Some(b'{') => {
+                // Read through `Object`, which refuses a key written twice.
+                let mut object = self.object()?;
+                while object.next_key(self)?.is_some() {
+                    self.skip()?;
+                }
+                Ok(())
+            }
+            Some(b'[') => self.list(Self::skip),
+            Some(b'"') => self.string().map(drop),
+            Some(b't' | b'f') => bool::read(self).map(drop),
+            // A number nobody reads has no type: it is held to an f64's range.
+            _ => f64::read(self).map(drop),
+        }
+    }
+
+    /// One JSON number, as written.
+    fn number(&mut self) -> Result<&str, DecodeError> {
+        self.space();
+        let start = self.at;
+        let digits = |r: &mut Self| {
+            let from = r.at;
+            while r.peek().is_some_and(|b| b.is_ascii_digit()) {
+                r.at += 1;
+            }
+            r.at > from
+        };
+        self.eat(b'-');
+        let int_start = self.at;
+        if !digits(self) {
+            self.at = start;
+            return Err(self.wrong("a number"));
+        }
+        if self.text[int_start] == b'0' && self.at - int_start > 1 {
+            return Err(DecodeError {
+                offset: start,
+                message: "a number has no leading zeros".to_string(),
+            });
+        }
+        if self.eat(b'.') && !digits(self) {
+            return Err(self.error("expected digits after `.`"));
+        }
+        if self.eat(b'e') || self.eat(b'E') {
+            if !self.eat(b'+') {
+                self.eat(b'-');
+            }
+            if !digits(self) {
+                return Err(self.error("expected digits in the exponent"));
+            }
+        }
+        Ok(std::str::from_utf8(&self.text[start..self.at]).expect("ASCII"))
+    }
+
+    /// A number that must be an integer.
+    fn integer<T: std::str::FromStr>(&mut self, name: &str) -> Result<T, DecodeError> {
+        let start = self.at;
+        let text = self.number()?;
+        if text.contains(['.', 'e', 'E']) {
+            return Err(DecodeError {
+                offset: start,
+                message: format!("a {name} is written without a fraction or exponent"),
+            });
+        }
+        if text == "-0" {
+            return Err(DecodeError {
+                offset: start,
+                message: "zero is written `0`, not `-0`".to_string(),
+            });
+        }
+        text.parse().map_err(|_| DecodeError {
+            offset: start,
+            message: format!("{text} is out of range for a {name}"),
+        })
+    }
+
+    fn string(&mut self) -> Result<String, DecodeError> {
+        self.space();
+        if !self.eat(b'"') {
+            return Err(self.wrong("a string"));
+        }
+        let mut out = String::new();
+        loop {
+            let start = self.at;
+            while self
+                .peek()
+                .is_some_and(|b| b != b'"' && b != b'\\' && b >= 0x20)
+            {
+                self.at += 1;
+            }
+            out.push_str(std::str::from_utf8(&self.text[start..self.at]).expect("checked UTF-8"));
+            match self.peek() {
+                Some(b'"') => {
+                    self.at += 1;
+                    return Ok(out);
+                }
+                Some(b'\\') => {
+                    self.at += 1;
+                    let escape = self
+                        .peek()
+                        .ok_or_else(|| self.error("the string never ends"))?;
+                    self.at += 1;
+                    match escape {
+                        b'"' => out.push('"'),
+                        b'\\' => out.push('\\'),
+                        b'/' => out.push('/'),
+                        b'b' => out.push('\u{8}'),
+                        b'f' => out.push('\u{c}'),
+                        b'n' => out.push('\n'),
+                        b'r' => out.push('\r'),
+                        b't' => out.push('\t'),
+                        b'u' => out.push(self.unicode_escape()?),
+                        _ => {
+                            self.at -= 1;
+                            return Err(self.error("an unknown escape"));
+                        }
+                    }
+                }
+                Some(_) => return Err(self.error("a control character must be escaped")),
+                None => return Err(self.error("the string never ends")),
+            }
+        }
+    }
+
+    fn hex4(&mut self) -> Result<u32, DecodeError> {
+        let hex = self
+            .text
+            .get(self.at..self.at + 4)
+            .ok_or_else(|| self.error("expected four hex digits"))?;
+        let hex = std::str::from_utf8(hex)
+            .ok()
+            .filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()));
+        let value = hex
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .ok_or_else(|| self.error("expected four hex digits"))?;
+        self.at += 4;
+        Ok(value)
+    }
+
+    /// After `\u`; joins a surrogate pair, and refuses a lone surrogate.
+    fn unicode_escape(&mut self) -> Result<char, DecodeError> {
+        let start = self.at - 2;
+        let lone = |_: &Self| DecodeError {
+            offset: start,
+            message: "a lone surrogate".to_string(),
+        };
+        let high = self.hex4()?;
+        let code = match high {
+            0xd800..=0xdbff => {
+                if !self.text[self.at..].starts_with(b"\\u") {
+                    return Err(lone(self));
+                }
+                self.at += 2;
+                let low = self.hex4()?;
+                if !(0xdc00..=0xdfff).contains(&low) {
+                    return Err(lone(self));
+                }
+                0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00)
+            }
+            0xdc00..=0xdfff => return Err(lone(self)),
+            c => c,
+        };
+        Ok(char::from_u32(code).expect("a scalar value"))
+    }
+}
+
+impl Canonical for bool {
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+        w.number(self);
+        Ok(())
+    }
+
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        r.space();
+        for (word, value) in [("true", true), ("false", false)] {
+            if r.text[r.at..].starts_with(word.as_bytes()) {
+                r.at += word.len();
+                return Ok(value);
+            }
+        }
+        Err(r.wrong("`true` or `false`"))
+    }
+}
+
+macro_rules! integer {
+    ($($t:ty),*) => {$(
+        impl Canonical for $t {
+            fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+                w.number(self);
+                Ok(())
+            }
+
+            fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+                r.integer(stringify!($t))
+            }
+        }
+    )*};
+}
+
+integer!(u32, i32, u64, i64);
+
+macro_rules! float {
+    ($($t:ty),*) => {$(
+        impl Canonical for $t {
+            fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+                if !self.is_finite() {
+                    return Err(EncodeError { message: format!("{self} has no JSON text") });
+                }
+                // Rust's shortest digits round a tie up; RFC 8785 takes the
+                // even digit. Formatting to exactly as many digits rounds the
+                // tie to even, and still reads back to the same value.
+                let shortest = format!("{self:e}");
+                let mantissa = shortest.trim_start_matches('-').split('e').next().unwrap_or("");
+                let digits = mantissa.bytes().filter(u8::is_ascii_digit).count();
+                w.float(format!("{self:.*e}", digits.saturating_sub(1)));
+                Ok(())
+            }
+
+            fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+                let start = r.at;
+                let value: $t = r.number()?.parse().expect("a JSON number parses");
+                if value.is_finite() {
+                    Ok(value)
+                } else {
+                    Err(DecodeError { offset: start, message: format!("out of range for an {}", stringify!($t)) })
+                }
+            }
+        }
+    )*};
+}
+
+float!(f32, f64);
+
+impl Canonical for String {
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+        w.string(self);
+        Ok(())
+    }
+
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        r.string()
+    }
+}
+
+impl Canonical for Version {
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+        w.string(&self.to_string());
+        Ok(())
+    }
+
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        r.space();
+        let start = r.at;
+        let text = r.string()?;
+        let part = |s: &str| {
+            let plain = !s.is_empty()
+                && s.bytes().all(|b| b.is_ascii_digit())
+                && (s == "0" || !s.starts_with('0'));
+            if plain { s.parse::<u32>().ok() } else { None }
+        };
+        let version = text.split_once('.').and_then(|(major, minor)| {
+            Some(Version {
+                major: part(major)?,
+                minor: part(minor)?,
+            })
+        });
+        version.ok_or(DecodeError {
+            offset: start,
+            message: format!("`{text}` is not a version, \"MAJOR.MINOR\""),
+        })
+    }
+}
+
+impl<T: Canonical> Canonical for Vec<T> {
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+        w.begin_list();
+        for item in self {
+            w.item();
+            item.write(w)?;
+        }
+        w.end_list();
+        Ok(())
+    }
+
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let mut items = Vec::new();
+        r.list(|r| {
+            items.push(T::read(r)?);
+            Ok(())
+        })?;
+        Ok(items)
+    }
+}
+
+impl<T: Canonical> Canonical for BTreeMap<String, T> {
+    fn write(&self, w: &mut Writer) -> Result<(), EncodeError> {
+        w.begin_object();
+        for (key, value) in self {
+            w.key(key);
+            value.write(w)?;
+        }
+        w.end_object();
+        Ok(())
+    }
+
+    fn read(r: &mut Reader<'_>) -> Result<Self, DecodeError> {
+        let mut object = r.object()?;
+        let mut map = BTreeMap::new();
+        while let Some(key) = object.next_key(r)? {
+            map.insert(key, T::read(r)?);
+        }
+        Ok(map)
+    }
+}
