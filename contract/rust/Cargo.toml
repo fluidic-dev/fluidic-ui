@@ -1,0 +1,9 @@
+[package]
+name = "fluidic-ui-schema"
+description = "The fluidic UI contract's message types, generated from the schema."
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true

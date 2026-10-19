@@ -1,3 +1,4 @@
 # What `cargo run -p fluidic-ui-idl -- generate` generates, one schema per
 # line, paths from the repository's root.
 schema=tools/idl/sample rust=tools/idl/sample/rust/src go=tools/idl/sample/go go_package=sample reference=tools/idl/sample/reference.md
+schema=contract/schema rust=contract/rust/src go=sdk/go/schema go_package=schema reference=contract/reference.md

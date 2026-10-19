@@ -1,0 +1,63 @@
+// The session: how a session opens and ends.
+
+/// The contract between a fluidic UI app and its host.
+contract 0.1
+
+/// The app's first message, sent once, before any other.
+message hello from app since 0.1 {
+    /// The contract versions the app speaks.
+    versions: list<version> since 0.1
+    /// The app's id in reverse-DNS form, such as `dev.fluidic.notes`. It is a claim, not proof.
+    app_id: string since 0.1
+    /// The SDK the app is built on, for diagnostics only.
+    sdk: sdk_info since 0.1
+}
+
+/// The host's answer to hello, opening the session.
+message welcome from host since 0.1 {
+    /// The highest contract version both sides speak.
+    version: version since 0.1
+    /// The id the host gives the session.
+    session_id: u64 since 0.1
+    /// The facts about the platform the host runs on.
+    platform: platform_facts since 0.1
+    /// The hard bounds the host refuses messages beyond.
+    limits: safety_limits since 0.1
+}
+
+/// The last message of a session. Nothing after it is acted on.
+message bye from either since 0.1 {
+    /// Why the session ended.
+    reason: bye_reason since 0.1
+}
+
+/// The SDK an app is built on.
+struct sdk_info since 0.1 {
+    /// The SDK's name.
+    name: string since 0.1
+    /// The SDK's version, in the SDK's own form.
+    version: string since 0.1
+}
+
+/// The set of facts about the platform the host runs on, which the app reads and does not negotiate. This version reports none.
+struct platform_facts since 0.1 {}
+
+/// The set of hard bounds that protect the host. This version sets none.
+struct safety_limits since 0.1 {}
+
+/// The reason a session ended.
+union bye_reason since 0.1 {
+    /// An ending the app chose.
+    done since 0.1
+    /// A message before hello.
+    not_hello_first since 0.1
+    /// A second hello.
+    second_hello since 0.1
+    /// A frame that could not be read.
+    unreadable_frame since 0.1
+    /// The lack of a contract version both sides speak.
+    no_common_version {
+        /// The versions the host speaks.
+        host_versions: list<version> since 0.1
+    } since 0.1
+}

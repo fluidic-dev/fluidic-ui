@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["tools/idl", "tools/idl/sample/rust"]
+members = ["contract/rust", "tools/idl", "tools/idl/sample/rust"]
 
 [workspace.package]
 edition = "2024"
